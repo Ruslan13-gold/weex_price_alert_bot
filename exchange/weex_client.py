@@ -7,8 +7,10 @@ from config import (
     WEEX_EXCHANGE_INFO_URL,
     WEEX_KLINES_URL,
     RSI_PERIOD,
-    RSI_KLINE_INTERVAL,
-    RSI_KLINE_LIMIT,
+    RSI_1H_INTERVAL,
+    RSI_1H_LIMIT,
+    RSI_4H_INTERVAL,
+    RSI_4H_LIMIT,
 )
 from exchange.price_monitor import calc_rsi
 
@@ -16,8 +18,9 @@ from exchange.price_monitor import calc_rsi
 class WeexClient:
     def __init__(self):
         self.session: aiohttp.ClientSession | None = None
-        self._rsi_cache: Dict[str, tuple[float, Optional[float]]] = {}
-        self._rsi_cache_ttl = 300
+        # symbol -> (timestamp, rsi_1h, rsi_4h)
+        self._rsi_cache: Dict[str, tuple[float, Optional[float], Optional[float]]] = {}
+        self._rsi_cache_ttl = 300  # 5 минут
 
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
@@ -52,8 +55,8 @@ class WeexClient:
     async def get_klines(
         self,
         symbol: str,
-        interval: str = RSI_KLINE_INTERVAL,
-        limit: int = RSI_KLINE_LIMIT,
+        interval: str,
+        limit: int,
     ) -> List[list]:
         params = {
             "symbol": symbol,
@@ -67,23 +70,26 @@ class WeexClient:
             resp.raise_for_status()
             return await resp.json()
 
-    async def get_rsi_1h_48h(self, symbol: str) -> Optional[float]:
+    async def _rsi_from_klines(
+        self, symbol: str, interval: str, limit: int
+    ) -> Optional[float]:
+        try:
+            klines = await self.get_klines(symbol, interval=interval, limit=limit)
+            klines_sorted = sorted(klines, key=lambda k: k[0])
+            closes = [float(k[4]) for k in klines_sorted if k[4] is not None]
+            return calc_rsi(closes, RSI_PERIOD)
+        except Exception:
+            return None
+
+    async def get_rsi_pair(self, symbol: str) -> tuple[Optional[float], Optional[float]]:
+        """RSI(14) 1h/48ч и RSI(14) 4h/7д. Кэш 5 минут."""
         now = time.time()
         cached = self._rsi_cache.get(symbol)
         if cached and now - cached[0] < self._rsi_cache_ttl:
-            return cached[1]
+            return cached[1], cached[2]
 
-        try:
-            klines = await self.get_klines(
-                symbol,
-                interval=RSI_KLINE_INTERVAL,
-                limit=RSI_KLINE_LIMIT,
-            )
-            klines_sorted = sorted(klines, key=lambda k: k[0])
-            closes = [float(k[4]) for k in klines_sorted if k[4] is not None]
-            rsi = calc_rsi(closes, RSI_PERIOD)
-        except Exception:
-            rsi = None
+        rsi_1h = await self._rsi_from_klines(symbol, RSI_1H_INTERVAL, RSI_1H_LIMIT)
+        rsi_4h = await self._rsi_from_klines(symbol, RSI_4H_INTERVAL, RSI_4H_LIMIT)
 
-        self._rsi_cache[symbol] = (now, rsi)
-        return rsi
+        self._rsi_cache[symbol] = (now, rsi_1h, rsi_4h)
+        return rsi_1h, rsi_4h

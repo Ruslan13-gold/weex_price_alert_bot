@@ -34,6 +34,7 @@ def _connect():
 
 
 def add_subscriber(chat_id: int, username: str | None = None, first_name: str | None = None) -> bool:
+    """Добавить подписчика. True если новый, False если уже был."""
     _ensure_db()
     with _connect() as conn:
         cur = conn.execute("SELECT 1 FROM subscribers WHERE chat_id = ?", (chat_id,))
@@ -54,6 +55,7 @@ def add_subscriber(chat_id: int, username: str | None = None, first_name: str | 
 
 
 def remove_subscriber(chat_id: int) -> bool:
+    """Удалить подписчика. True если был удалён."""
     _ensure_db()
     with _connect() as conn:
         cur = conn.execute("DELETE FROM subscribers WHERE chat_id = ?", (chat_id,))

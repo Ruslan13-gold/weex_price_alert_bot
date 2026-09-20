@@ -2,7 +2,7 @@ import time
 from collections import defaultdict, deque
 from typing import Dict, Deque, Tuple, Optional, List
 from dataclasses import dataclass
-from config import ALERT_RULES, MIN_WINDOW_SECONDS, ALERT_COOLDOWN
+from config import ALERT_RULES, MIN_WINDOW_SECONDS, ALERT_COOLDOWN, MIN_VOLUME_24H_USDT
 
 
 @dataclass
@@ -22,7 +22,8 @@ class Alert:
     direction: str
     rule_id: str
     threshold: float
-    rsi: Optional[float]
+    rsi_1h: Optional[float] = None
+    rsi_4h: Optional[float] = None
 
 
 def format_duration(seconds: float) -> str:
@@ -67,7 +68,7 @@ class PriceMonitor:
     def __init__(self):
         self.max_history_seconds = max(r["max_window"] for r in ALERT_RULES) + 60
         self.history: Dict[str, Deque[PricePoint]] = defaultdict(
-            lambda: deque(maxlen=600)
+            lambda: deque(maxlen=800)
         )
         self.last_alert_time: Dict[Tuple[str, str], float] = {}
         self.alert_cooldown = ALERT_COOLDOWN
@@ -82,6 +83,12 @@ class PriceMonitor:
         ):
             self.history[symbol].popleft()
 
+    def get_last_price(self, symbol: str) -> Optional[float]:
+        points = self.history.get(symbol)
+        if not points:
+            return None
+        return points[-1].price
+
     def check_alerts(self, symbol: str) -> List[Alert]:
         points = list(self.history[symbol])
         if len(points) < 2:
@@ -90,6 +97,10 @@ class PriceMonitor:
         now = time.time()
         current = points[-1]
         if current.price <= 0:
+            return []
+
+        # Объём 24ч должен быть больше порога (USDT)
+        if current.volume_24h < MIN_VOLUME_24H_USDT:
             return []
 
         best: Optional[tuple] = None
@@ -141,6 +152,7 @@ class PriceMonitor:
                 direction="up" if change > 0 else "down",
                 rule_id=rule_id,
                 threshold=threshold,
-                rsi=None,
+                rsi_1h=None,
+                rsi_4h=None,
             )
         ]

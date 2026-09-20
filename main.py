@@ -52,18 +52,23 @@ async def price_monitor_loop(app: Application) -> None:
 
                     for alert in alerts:
                         try:
-                            alert.rsi = await client.get_rsi_1h_48h(alert.symbol)
+                            alert.rsi_1h, alert.rsi_4h = await client.get_rsi_pair(
+                                alert.symbol
+                            )
                         except Exception as e:
                             logger.warning("RSI для %s: %s", alert.symbol, e)
-                            alert.rsi = None
+                            alert.rsi_1h = None
+                            alert.rsi_4h = None
 
                         logger.info(
-                            "ALERT %s %s%% за %s (≥%s%%) RSI=%s",
+                            "ALERT %s %s%% за %s (≥%s%%) vol=%s RSI1h=%s RSI4h=%s",
                             alert.symbol,
                             alert.change_percent,
                             format_duration(alert.elapsed_seconds),
                             alert.threshold,
-                            alert.rsi,
+                            alert.volume_24h,
+                            alert.rsi_1h,
+                            alert.rsi_4h,
                         )
                         await notifier.send_alert(alert)
 
