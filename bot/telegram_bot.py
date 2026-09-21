@@ -20,6 +20,12 @@ RULE_WINDOW_LABELS = {
     "40pct_30m": "30м",
 }
 
+CONF_RU = {
+    "high": "высокая",
+    "medium": "средняя",
+    "low": "низкая",
+}
+
 
 class TelegramNotifier:
     def __init__(self, bot: Bot | None = None):
@@ -37,38 +43,53 @@ class TelegramNotifier:
         vol_k = int(MIN_VOLUME_24H_USDT // 1000)
         text = (
             "✅ <b>WEEX Price Alert Bot запущен</b>\n\n"
-            f"📊 Контрактов в мониторинге: <b>{symbols_count}</b>\n"
-            f"⏱ Интервал опроса: <b>{POLL_INTERVAL} сек</b>\n"
+            f"📊 Контрактов: <b>{symbols_count}</b>\n"
+            f"⏱ Опрос: <b>{POLL_INTERVAL} сек</b>\n"
             f"💰 Мин. объём 24ч: <b>{vol_k}k USDT</b>\n\n"
-            f"<b>Правила алертов:</b>\n{rules_text}\n\n"
-            "В алерте: RSI(14) 1ч/48ч и RSI(14) 4ч/7д"
+            f"<b>Триггеры:</b>\n{rules_text}\n\n"
+            "В алерте: классификатор <b>LONG / SHORT</b>, RSI, идея и инвалидация.\n"
+            "<i>Не финансовый совет.</i>"
         )
         await self.broadcast(text)
 
     async def send_alert(self, alert: Alert) -> None:
-        emoji = "🟢" if alert.direction == "up" else "🔴"
+        bias = alert.signal_bias or "NEUTRAL"
+        if bias == "LONG":
+            bias_emoji = "🟢 LONG"
+        elif bias == "SHORT":
+            bias_emoji = "🔴 SHORT"
+        else:
+            bias_emoji = "⚪ NEUTRAL"
+
+        conf = CONF_RU.get(alert.signal_confidence, alert.signal_confidence)
         sign = "+" if alert.change_percent > 0 else ""
         duration = format_duration(alert.elapsed_seconds)
         window = RULE_WINDOW_LABELS.get(alert.rule_id, alert.rule_id)
 
-        if alert.rsi_1h is not None:
-            rsi_1h_line = f"RSI(14) 1ч / 48ч: <code>{alert.rsi_1h}</code>"
-        else:
-            rsi_1h_line = "RSI(14) 1ч / 48ч: <i>нет данных</i>"
-
-        if alert.rsi_4h is not None:
-            rsi_4h_line = f"RSI(14) 4ч / 7д: <code>{alert.rsi_4h}</code>"
-        else:
-            rsi_4h_line = "RSI(14) 4ч / 7д: <i>нет данных</i>"
+        rsi_1h = (
+            f"<code>{alert.rsi_1h}</code>"
+            if alert.rsi_1h is not None
+            else "<i>нет данных</i>"
+        )
+        rsi_4h = (
+            f"<code>{alert.rsi_4h}</code>"
+            if alert.rsi_4h is not None
+            else "<i>нет данных</i>"
+        )
 
         text = (
-            f"{emoji} <b>{alert.symbol}</b>\n"
-            f"Изменение: <b>{sign}{alert.change_percent}%</b> за <b>{duration}</b>\n"
+            f"{bias_emoji} · <b>{alert.symbol}</b> · уверенность: <b>{conf}</b>\n"
+            f"Score: <code>{alert.signal_score}</code>/100\n\n"
+            f"Триггер: <b>{sign}{alert.change_percent}%</b> за <b>{duration}</b>\n"
             f"Правило: ≥{alert.threshold}% (окно до {window})\n"
             f"Цена: <b>{alert.current_price}</b>\n"
-            f"Объём 24ч: <code>{self._format_volume(alert.volume_24h)} USDT</code>\n"
-            f"{rsi_1h_line}\n"
-            f"{rsi_4h_line}"
+            f"Объём 24ч: <code>{self._format_volume(alert.volume_24h)} USDT</code>\n\n"
+            f"RSI(14) 1ч / 48ч: {rsi_1h}\n"
+            f"RSI(14) 4ч / 7д: {rsi_4h}\n\n"
+            f"<b>Идея:</b> {alert.signal_idea}\n"
+            f"<b>Горизонт:</b> {alert.signal_horizon}\n"
+            f"<b>Инвалидация:</b> {alert.signal_invalidation}\n\n"
+            f"<i>Потенциальный сигнал, не торговая рекомендация.</i>"
         )
         await self.broadcast(text)
 

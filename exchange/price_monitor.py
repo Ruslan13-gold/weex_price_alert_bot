@@ -2,7 +2,7 @@ import time
 from collections import defaultdict, deque
 from typing import Dict, Deque, Tuple, Optional, List
 from dataclasses import dataclass
-from config import ALERT_RULES, MIN_WINDOW_SECONDS, ALERT_COOLDOWN, MIN_VOLUME_24H_USDT
+from config import ALERT_RULES, MIN_WINDOW_SECONDS, ALERT_COOLDOWN, MIN_VOLUME_24H_USDT, SYMBOL_COOLDOWN
 
 
 @dataclass
@@ -24,6 +24,13 @@ class Alert:
     threshold: float
     rsi_1h: Optional[float] = None
     rsi_4h: Optional[float] = None
+    # Классификатор сигнала
+    signal_bias: str = "NEUTRAL"  # LONG | SHORT | NEUTRAL
+    signal_confidence: str = "low"
+    signal_idea: str = ""
+    signal_horizon: str = ""
+    signal_invalidation: str = ""
+    signal_score: int = 0
 
 
 def format_duration(seconds: float) -> str:
@@ -71,7 +78,9 @@ class PriceMonitor:
             lambda: deque(maxlen=800)
         )
         self.last_alert_time: Dict[Tuple[str, str], float] = {}
+        self.last_symbol_alert: Dict[str, float] = {}
         self.alert_cooldown = ALERT_COOLDOWN
+        self.symbol_cooldown = SYMBOL_COOLDOWN
 
     def update(self, symbol: str, price: float, volume_24h: float) -> None:
         now = time.time()
@@ -101,6 +110,11 @@ class PriceMonitor:
 
         # Объём 24ч должен быть больше порога (USDT)
         if current.volume_24h < MIN_VOLUME_24H_USDT:
+            return []
+
+        # Cooldown на весь символ
+        last_sym = self.last_symbol_alert.get(symbol, 0.0)
+        if now - last_sym < self.symbol_cooldown:
             return []
 
         best: Optional[tuple] = None
@@ -141,6 +155,7 @@ class PriceMonitor:
 
         threshold, change, elapsed, rule_id = best
         self.last_alert_time[(symbol, rule_id)] = now
+        self.last_symbol_alert[symbol] = now
 
         return [
             Alert(

@@ -4,6 +4,7 @@ from telegram.ext import Application, CommandHandler
 
 from exchange.weex_client import WeexClient
 from exchange.price_monitor import PriceMonitor, format_duration
+from exchange.signal_classifier import classify_signal
 from bot.telegram_bot import TelegramNotifier
 from bot.handlers import cmd_start, cmd_stop, cmd_help, cmd_status
 from config import POLL_INTERVAL, TELEGRAM_BOT_TOKEN
@@ -60,13 +61,25 @@ async def price_monitor_loop(app: Application) -> None:
                             alert.rsi_1h = None
                             alert.rsi_4h = None
 
-                        logger.info(
-                            "ALERT %s %s%% за %s (≥%s%%) vol=%s RSI1h=%s RSI4h=%s",
-                            alert.symbol,
+                        sig = classify_signal(
                             alert.change_percent,
-                            format_duration(alert.elapsed_seconds),
-                            alert.threshold,
-                            alert.volume_24h,
+                            alert.rsi_1h,
+                            alert.rsi_4h,
+                        )
+                        alert.signal_bias = sig.bias
+                        alert.signal_confidence = sig.confidence
+                        alert.signal_idea = sig.idea
+                        alert.signal_horizon = sig.horizon
+                        alert.signal_invalidation = sig.invalidation_hint
+                        alert.signal_score = sig.score
+
+                        logger.info(
+                            "SIGNAL %s %s conf=%s score=%s move=%s%% RSI1h=%s RSI4h=%s",
+                            alert.symbol,
+                            alert.signal_bias,
+                            alert.signal_confidence,
+                            alert.signal_score,
+                            alert.change_percent,
                             alert.rsi_1h,
                             alert.rsi_4h,
                         )
